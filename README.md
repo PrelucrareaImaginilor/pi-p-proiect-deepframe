@@ -1,1 +1,1 @@
-![Diagramă bloc](https://github.com/user-attachments/assets/385c3f43-4d9c-4287-877e-0f8934a9acab)
+![Diagramă bloc_v2](https://github.com/user-attachments/assets/90cabb96-57f7-4d50-8aa7-9fea2aefa8bc)
