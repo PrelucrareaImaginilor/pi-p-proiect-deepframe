@@ -30,6 +30,41 @@
      <enum>Qt::Horizontal</enum>
     </property>
    </widget>
+   <widget class="QSlider" name="noiseReductionSlider">
+    <property name="geometry">
+     <rect>
+      <x>750</x>
+      <y>240</y>
+      <width>160</width>
+      <height>22</height>
+     </rect>
+    </property>
+    <property name="orientation">
+     <enum>Qt::Horizontal</enum>
+    </property>
+    <property name="minimum">
+     <number>1</number>
+    </property>
+    <property name="maximum">
+     <number>10</number>
+    </property>
+    <property name="singleStep">
+     <number>1</number>
+    </property>
+   </widget>
+   <widget class="QLabel" name="noiseReductionLabel">
+    <property name="geometry">
+     <rect>
+      <x>810</x>
+      <y>220</y>
+      <width>100</width>
+      <height>16</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Reducere Zgomot</string>
+    </property>
+   </widget>
    <widget class="QSlider" name="contrastSlider">
     <property name="geometry">
      <rect>
@@ -115,6 +150,8 @@
    <zorder>DetectButton</zorder>
    <zorder>GammaSlider</zorder>
    <zorder>GammaLabel</zorder>
+   <zorder>noiseReductionSlider</zorder>
+   <zorder>noiseReductionLabel</zorder>
   </widget>
   <widget class="QMenuBar" name="menubar">
    <property name="geometry">
