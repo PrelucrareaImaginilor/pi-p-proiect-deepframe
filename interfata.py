@@ -12,6 +12,7 @@ from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 import cv2 as cv
+import numpy as np
 
 
 class Ui_MainWindow(object):
@@ -41,8 +42,8 @@ class Ui_MainWindow(object):
         self.contrastSlider.setGeometry(QtCore.QRect(750, 70, 160, 22))
         self.contrastSlider.setOrientation(QtCore.Qt.Horizontal)
         self.contrastSlider.setObjectName("contrastSlider")
-        self.contrastSlider.setMinimum(50)
-        self.contrastSlider.setMaximum(150)
+        self.contrastSlider.setMinimum(100)
+        self.contrastSlider.setMaximum(300)
         self.contrastSlider.setValue(100)
 
         self.label = QtWidgets.QLabel(self.centralwidget)
@@ -79,12 +80,26 @@ class Ui_MainWindow(object):
         self.GammaSlider.setGeometry(QRect(750, 160, 160, 22))
         self.GammaSlider.setOrientation(Qt.Horizontal)
         self.GammaSlider.setMinimum(1)
-        self.GammaSlider.setMaximum(2)
+        self.GammaSlider.setMaximum(10)
 
         '''Gamma label'''
         self.GammaLabel = QLabel(self.centralwidget)
         self.GammaLabel.setObjectName(u"GammaLabel")
         self.GammaLabel.setGeometry(QRect(810, 140, 55, 16))
+
+        '''Noise Reduction Slider'''
+        self.noiseReductionSlider = QSlider(self.centralwidget)
+        self.noiseReductionSlider.setObjectName(u"noiseReductionSlider")
+        self.noiseReductionSlider.setGeometry(QRect(750, 240, 160, 22))
+        self.noiseReductionSlider.setOrientation(Qt.Horizontal)
+        self.noiseReductionSlider.setMinimum(1)
+        self.noiseReductionSlider.setMaximum(10)
+        self.noiseReductionSlider.setValue(1)
+
+        '''Noise Reduction Label'''
+        self.noiseReductionLabel = QLabel(self.centralwidget)
+        self.noiseReductionLabel.setObjectName(u"noiseReductionLabel")
+        self.noiseReductionLabel.setGeometry(QRect(810, 220, 100, 16))
 
 
         self.contrastSlider.raise_()
@@ -94,6 +109,27 @@ class Ui_MainWindow(object):
         self.DetectButton.raise_()
         self.GammaSlider.raise_()
         self.GammaLabel.raise_()
+        self.noiseReductionSlider.raise_()
+        self.noiseReductionLabel.raise_()
+
+        # Slider pentru ajustarea pragului de detectare
+        self.thresholdSlider = QSlider(self.centralwidget)
+        self.thresholdSlider.setGeometry(QtCore.QRect(750, 450, 160, 22))
+        self.thresholdSlider.setOrientation(Qt.Horizontal)
+        self.thresholdSlider.setMinimum(10)
+        self.thresholdSlider.setMaximum(100)
+        self.thresholdSlider.setValue(50)
+        self.thresholdSlider.setObjectName("thresholdSlider")
+
+        self.thresholdLabel = QLabel(self.centralwidget)
+        self.thresholdLabel.setGeometry(QtCore.QRect(750, 420, 160, 22))
+        self.thresholdLabel.setText("Pragul de detectare")
+
+        MainWindow.setCentralWidget(self.centralwidget)
+
+        # Conectarea butoanelor și slider-ului
+        self.DetectButton.clicked.connect(self.detectObjects)
+
 
         '''Aici se creeaza actiunile'''
 
@@ -110,6 +146,7 @@ class Ui_MainWindow(object):
         self.menuFile.addAction(self.action_sterge)
         self.menubar.addAction(self.menuFile.menuAction())
         self.contrastSlider.addAction(self.actionContrast)
+        self.noiseReductionSlider.valueChanged.connect(self.applyNoiseReduction)
 
 
         self.retranslateUi(MainWindow)
@@ -125,6 +162,7 @@ class Ui_MainWindow(object):
 
     def defaultValues(self):
         self.contrastSlider.setValue(100)
+        self.noiseReductionSlider.setValue(1)
     def loadImage(self):
 
         self.filename = QFileDialog.getOpenFileName(directory="G:/__PI Proiect/pythonProject1/res/images",filter="Image (*.png *.jpg *.jpeg *.bmp)")[0]
@@ -139,6 +177,78 @@ class Ui_MainWindow(object):
             self.tmp = self.image.copy()
             self.setPhoto(self.image)
 
+    def displayImage(self, img):
+        """Afișează imaginea în QLabel după redimensionare."""
+        img = cv.resize(img, (681, 441))
+        rgb_image = cv.cvtColor(img, cv.COLOR_BGR2RGB)
+        qt_image = QImage(rgb_image.data, rgb_image.shape[1], rgb_image.shape[0], rgb_image.strides[0],
+                          QImage.Format_RGB888)
+        self.Imagine.setPixmap(QtGui.QPixmap.fromImage(qt_image))
+
+    def detectObjects(self):
+        """Funcție de detectare a obiectelor folosind modelul YOLO."""
+        try:
+            # Încarcă modelul YOLO și configurarea
+            model_cfg = "res/yolov3.cfg"  # Verifică numele fișierului
+            model_weights = "res/yolov3.weights"
+            class_names = "res/coco.names"
+
+            # Citim clasele obiectelor
+            with open(class_names, 'r') as f:
+                self.classes = [line.strip() for line in f.readlines()]
+
+            # Configurăm YOLO și OpenCV
+            net = cv.dnn.readNetFromDarknet(model_cfg, model_weights)
+            net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+            net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+
+            # Dimensiunea de intrare a rețelei și pragul de încredere
+            blob = cv.dnn.blobFromImage(self.image, 1 / 255.0, (416, 416), swapRB=True, crop=False)
+            net.setInput(blob)
+            output_layers = net.getUnconnectedOutLayersNames()
+            layer_outputs = net.forward(output_layers)
+
+            # Extragem rezultatele detectării
+            boxes, confidences, class_ids = [], [], []
+            h, w = self.image.shape[:2]
+            confidence_threshold = self.thresholdSlider.value() / 100.0
+
+            for output in layer_outputs:
+                for detection in output:
+                    scores = detection[5:]
+                    class_id = np.argmax(scores)
+                    confidence = scores[class_id]
+
+                    if confidence > confidence_threshold:
+                        box = detection[0:4] * np.array([w, h, w, h])
+                        (center_x, center_y, width, height) = box.astype("int")
+                        x = int(center_x - (width / 2))
+                        y = int(center_y - (height / 2))
+
+                        boxes.append([x, y, int(width), int(height)])
+                        confidences.append(float(confidence))
+                        class_ids.append(class_id)
+
+            # Aplicați suprimarea non-maximă pentru a filtra detectările
+            indices = cv.dnn.NMSBoxes(boxes, confidences, confidence_threshold, confidence_threshold - 0.1)
+            for i in indices.flatten():
+                (x, y) = (boxes[i][0], boxes[i][1])
+                (w, h) = (boxes[i][2], boxes[i][3])
+                color = (0, 255, 0)
+
+                # Desenăm cutiile și clasele pe imagine
+                cv.rectangle(self.image, (x, y), (x + w, y + h), color, 2)
+                text = f"{self.classes[class_ids[i]]}: {confidences[i]:.2f}"
+                cv.putText(self.image, text, (x, y - 5), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+            # Afișăm imaginea procesată cu detectările
+            self.displayImage(self.image)
+
+        except Exception as e:
+            QMessageBox.critical(self.main_window, "Eroare detectare",
+                                 f"A apărut o eroare la detectarea obiectelor: {e}")
+            print(f"Eroare detectare obiecte: {e}")  # Pentru diagnoză în consola
+
     '''Sfarsit loadImage'''
     def setPhoto(self, image):
         image = cv.resize(image, [681, 441], interpolation=cv.INTER_AREA)
@@ -146,6 +256,8 @@ class Ui_MainWindow(object):
         image = QImage(frame, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format_RGB888)
 
         self.Imagine.setPixmap(QtGui.QPixmap.fromImage(image))
+
+
 
     def deletePhoto(self):
         self.Imagine.setText("Încarcă o imagine pentru a începe.")
@@ -157,10 +269,16 @@ class Ui_MainWindow(object):
 
         value = self.contrastSlider.value() / 100.0
 
-        #newImage = cv.convertScaleAbs(self.tmp, alpha=1+value, beta=0)
+        newImage = cv.convertScaleAbs(self.tmp, alpha=value, beta=0)
 
-        newImage = cv.addWeighted(self.tmp, value, self.tmp, 0, 0.8)
         self.setPhoto(newImage)
+
+    def applyNoiseReduction(self):
+        if self.tmp is None:
+            return
+        intensity = self.noiseReductionSlider.value() * 5
+        noiseReducedImage = cv.bilateralFilter(self.tmp, d=9, sigmaColor=intensity, sigmaSpace=intensity)
+        self.setPhoto(noiseReducedImage)
 
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
@@ -172,6 +290,7 @@ class Ui_MainWindow(object):
         self.action_sterge.setText(_translate("MainWindow", "Șterge fișierul"))
         self.DetectButton.setText(QCoreApplication.translate("MainWindow", u"Detecție obiecte", None))
         self.GammaLabel.setText(QCoreApplication.translate("MainWindow", u"Gamma", None))
+        self.noiseReductionLabel.setText(_translate("MainWindow", "Reducere zgomot"))
 
 
 
