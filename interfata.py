@@ -185,69 +185,50 @@ class Ui_MainWindow(object):
                           QImage.Format_RGB888)
         self.Imagine.setPixmap(QtGui.QPixmap.fromImage(qt_image))
 
-    def detectObjects(self):
-        """Funcție de detectare a obiectelor folosind modelul YOLO."""
+       def detectObjects(self):
+        if self.tmp is None:
+            QMessageBox.warning(self.main_window, "Eroare", "Încărcați o imagine înainte de a efectua detectarea!")
+            return
+
         try:
-            # Încarcă modelul YOLO și configurarea
-            model_cfg = "res/yolov3.cfg"  # Verifică numele fișierului
-            model_weights = "res/yolov3.weights"
-            class_names = "res/coco.names"
+            # Încarcă modelul YOLOv8
+            model_path = "res/best.pt"  # Calea către model
+            model = YOLO(model_path)
 
-            # Citim clasele obiectelor
-            with open(class_names, 'r') as f:
-                self.classes = [line.strip() for line in f.readlines()]
+            # Încarcă configurația din config.json
+            config_path = "res/config.json"
+            with open(config_path, 'r') as f:
+                config = json.load(f)
 
-            # Configurăm YOLO și OpenCV
-            net = cv.dnn.readNetFromDarknet(model_cfg, model_weights)
-            net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
-            net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+            # Aplicați pragul de detectare din slider
+            detection_threshold = self.thresholdSlider.value() / 100.0
 
-            # Dimensiunea de intrare a rețelei și pragul de încredere
-            blob = cv.dnn.blobFromImage(self.image, 1 / 255.0, (416, 416), swapRB=True, crop=False)
-            net.setInput(blob)
-            output_layers = net.getUnconnectedOutLayersNames()
-            layer_outputs = net.forward(output_layers)
+            # Realizează inferența pe imaginea curentă
+            results = model.predict(self.tmp, conf=detection_threshold)
 
-            # Extragem rezultatele detectării
-            boxes, confidences, class_ids = [], [], []
-            h, w = self.image.shape[:2]
-            confidence_threshold = self.thresholdSlider.value() / 100.0
+            # Obține etichetele claselor din model
+            class_labels = model.names  # Dicționar: {id_clasă: nume_clasă}
 
-            for output in layer_outputs:
-                for detection in output:
-                    scores = detection[5:]
-                    class_id = np.argmax(scores)
-                    confidence = scores[class_id]
+            # Extrage informațiile despre detecții
+            annotated_frame = results[0].plot()  # Imagine cu detecțiile marcate
+            self.displayImage(annotated_frame)
 
-                    if confidence > confidence_threshold:
-                        box = detection[0:4] * np.array([w, h, w, h])
-                        (center_x, center_y, width, height) = box.astype("int")
-                        x = int(center_x - (width / 2))
-                        y = int(center_y - (height / 2))
+            # Informații suplimentare despre detecții
+            detected_objects = []
+            for r in results[0].boxes:
+                class_id = int(r.cls[0])  # ID-ul clasei
+                confidence = float(r.conf[0])  # Încrederea
+                detected_objects.append((class_labels[class_id], confidence))
 
-                        boxes.append([x, y, int(width), int(height)])
-                        confidences.append(float(confidence))
-                        class_ids.append(class_id)
-
-            # Aplicați suprimarea non-maximă pentru a filtra detectările
-            indices = cv.dnn.NMSBoxes(boxes, confidences, confidence_threshold, confidence_threshold - 0.1)
-            for i in indices.flatten():
-                (x, y) = (boxes[i][0], boxes[i][1])
-                (w, h) = (boxes[i][2], boxes[i][3])
-                color = (0, 255, 0)
-
-                # Desenăm cutiile și clasele pe imagine
-                cv.rectangle(self.image, (x, y), (x + w, y + h), color, 2)
-                text = f"{self.classes[class_ids[i]]}: {confidences[i]:.2f}"
-                cv.putText(self.image, text, (x, y - 5), cv.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
-            # Afișăm imaginea procesată cu detectările
-            self.displayImage(self.image)
+            # Afișează detecțiile
+            detecții = "\n".join([f"{obj[0]}: {obj[1]:.2f}" for obj in detected_objects])
+            QMessageBox.information(self.main_window, "Detecții finalizate", f"Obiectele detectate:\n{detecții}")
 
         except Exception as e:
-            QMessageBox.critical(self.main_window, "Eroare detectare",
-                                 f"A apărut o eroare la detectarea obiectelor: {e}")
-            print(f"Eroare detectare obiecte: {e}")  # Pentru diagnoză în consola
+            QMessageBox.critical(self.main_window, "Eroare", f"A apărut o eroare în timpul detecției: {str(e)}")
+
+        # Asigură-te că funcția este conectată la butonul de detecție
+        self.DetectButton.clicked.connect(self.detectObjects)
 
     '''Sfarsit loadImage'''
     def setPhoto(self, image):
