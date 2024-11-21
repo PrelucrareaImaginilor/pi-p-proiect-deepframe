@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+import os
 # Form implementation generated from reading ui file 'interfata.ui'
 #
 # Created by: PyQt5 UI code generator 5.15.11
@@ -12,6 +12,8 @@ from PyQt5.QtGui import QImage
 from PyQt5.QtWidgets import *
 from PyQt5.QtCore import *
 import cv2 as cv
+import json
+from ultralytics import YOLO
 import numpy as np
 
 
@@ -101,6 +103,9 @@ class Ui_MainWindow(object):
         self.noiseReductionLabel.setObjectName(u"noiseReductionLabel")
         self.noiseReductionLabel.setGeometry(QRect(810, 220, 100, 16))
 
+        self.batchButton = QPushButton(self.centralwidget)
+        self.batchButton.setObjectName(u"batchButton")
+        self.batchButton.setGeometry(QRect(810, 570, 111, 31))
 
         self.contrastSlider.raise_()
         self.label.raise_()
@@ -111,6 +116,7 @@ class Ui_MainWindow(object):
         self.GammaLabel.raise_()
         self.noiseReductionSlider.raise_()
         self.noiseReductionLabel.raise_()
+        self.batchButton.raise_()
 
         # Slider pentru ajustarea pragului de detectare
         self.thresholdSlider = QSlider(self.centralwidget)
@@ -124,6 +130,8 @@ class Ui_MainWindow(object):
         self.thresholdLabel = QLabel(self.centralwidget)
         self.thresholdLabel.setGeometry(QtCore.QRect(750, 420, 160, 22))
         self.thresholdLabel.setText("Pragul de detectare")
+
+
 
         MainWindow.setCentralWidget(self.centralwidget)
 
@@ -154,7 +162,8 @@ class Ui_MainWindow(object):
         #Aici se conecteaza actiunile la sloturi
         self.actionNou.triggered.connect(self.loadImage)  # Conectează la metoda loadImage
         self.action_sterge.triggered.connect(self.deletePhoto)
-
+        self.DetectButton.clicked.connect(self.detectObjects)
+        self.batchButton.clicked.connect(self.batchProcessing)
         self.contrastSlider.valueChanged['int'].connect(self.setContrast)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
@@ -176,7 +185,7 @@ class Ui_MainWindow(object):
 
             self.tmp = self.image.copy()
             self.setPhoto(self.image)
-
+        '''Sfarsit loadImage'''
     def displayImage(self, img):
         """Afișează imaginea în QLabel după redimensionare."""
         img = cv.resize(img, (681, 441))
@@ -185,7 +194,7 @@ class Ui_MainWindow(object):
                           QImage.Format_RGB888)
         self.Imagine.setPixmap(QtGui.QPixmap.fromImage(qt_image))
 
-       def detectObjects(self):
+    def detectObjects(self):
         if self.tmp is None:
             QMessageBox.warning(self.main_window, "Eroare", "Încărcați o imagine înainte de a efectua detectarea!")
             return
@@ -213,33 +222,59 @@ class Ui_MainWindow(object):
             annotated_frame = results[0].plot()  # Imagine cu detecțiile marcate
             self.displayImage(annotated_frame)
 
-            # Informații suplimentare despre detecții
+
             detected_objects = []
             for r in results[0].boxes:
                 class_id = int(r.cls[0])  # ID-ul clasei
                 confidence = float(r.conf[0])  # Încrederea
-                detected_objects.append((class_labels[class_id], confidence))
+                bbox = r.xywh[0].tolist()
+                detected_objects.append((class_id, bbox, confidence))
 
+            return detected_objects
             # Afișează detecțiile
-            detecții = "\n".join([f"{obj[0]}: {obj[1]:.2f}" for obj in detected_objects])
-            QMessageBox.information(self.main_window, "Detecții finalizate", f"Obiectele detectate:\n{detecții}")
+            # detecții = "\n".join([f"{obj[0]}: {obj[1]:.2f}" for obj in detected_objects])
+            # QMessageBox.information(self.main_window, "Detecții finalizate", f"Obiectele detectate:\n{detecții}")
 
         except Exception as e:
             QMessageBox.critical(self.main_window, "Eroare", f"A apărut o eroare în timpul detecției: {str(e)}")
+            return []
 
-        # Asigură-te că funcția este conectată la butonul de detecție
-        self.DetectButton.clicked.connect(self.detectObjects)
 
-    '''Sfarsit loadImage'''
     def setPhoto(self, image):
         image = cv.resize(image, [681, 441], interpolation=cv.INTER_AREA)
         frame = cv.cvtColor(image, cv.IMREAD_ANYCOLOR)
         image = QImage(frame, frame.shape[1], frame.shape[0], frame.strides[0], QImage.Format_RGB888)
-
         self.Imagine.setPixmap(QtGui.QPixmap.fromImage(image))
 
+    def batchProcessing(self):
+        print("Procesarea batch a început")
 
+        source_dir = "res/images/test/images"
+        output_dir = "res/images/test/_labels"
+        os.makedirs(output_dir, exist_ok=True)
 
+        image_files = [f for f in os.listdir(source_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+
+        detections = []
+        for image_file in image_files:
+
+            self.tmp = cv.imread(os.path.join(source_dir, image_file))
+            detections = self.detectObjects()
+
+            if self.tmp is None:
+                print(f"Eroare la încărcarea imaginii: {image_file}")
+                continue
+
+            if not detections:
+                print(f"Nicio detecție pentru imaginea {image_file}.")
+                continue
+            else:
+                txt_filename = os.path.join(output_dir, f"{os.path.splitext(image_file)[0]}.txt")
+                with open(txt_filename, "w") as txt_file:
+                    for class_id, bbox, confidence in detections:
+                        txt_file.write(f"{class_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f} {confidence:.6f}\n")
+
+        print(f"Procesarea imaginilor din {source_dir} s-a încheiat. Rezultatele sunt în {output_dir}.")
     def deletePhoto(self):
         self.Imagine.setText("Încarcă o imagine pentru a începe.")
 
@@ -272,7 +307,7 @@ class Ui_MainWindow(object):
         self.DetectButton.setText(QCoreApplication.translate("MainWindow", u"Detecție obiecte", None))
         self.GammaLabel.setText(QCoreApplication.translate("MainWindow", u"Gamma", None))
         self.noiseReductionLabel.setText(_translate("MainWindow", "Reducere zgomot"))
-
+        self.batchButton.setText(QCoreApplication.translate("MainWindow", u"Procesare batch", None))
 
 
 # if __name__ == "__main__":
