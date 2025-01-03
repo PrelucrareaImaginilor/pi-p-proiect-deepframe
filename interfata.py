@@ -16,6 +16,32 @@ import json
 from ultralytics import YOLO
 import numpy as np
 
+import time
+
+
+class FrameSequenceThread(QThread):
+    frame_ready = pyqtSignal(object)
+
+    def __init__(self, frames_dir):
+        super().__init__()
+        self.frames_dir = frames_dir
+        self.running = False
+        self.frame_files = sorted([f for f in os.listdir(frames_dir)
+                                   if f.lower().endswith(('.jpg', '.jpeg', '.png'))])
+
+    def run(self):
+        self.running = True
+        while self.running:
+            for frame_file in self.frame_files:
+                if not self.running:
+                    break
+                frame = cv.imread(os.path.join(self.frames_dir, frame_file))
+                if frame is not None:
+                    self.frame_ready.emit(frame)
+                    time.sleep(1 / 30)  # 30 FPS
+
+    def stop(self):
+        self.running = False
 
 class Ui_MainWindow(object):
 
@@ -27,19 +53,22 @@ class Ui_MainWindow(object):
         MainWindow.resize(1041, 672)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
         self.centralwidget.setObjectName("centralwidget")
+        self.video_thread = None
 
-        # Filename pentru imagine si copia ei
         self.filename = None
         self.tmp = None
 
-        # Widget-uri
+        self.video_capture = None
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.update_video_frame)
+        self.is_playing_video = False
+
         self.line = QtWidgets.QFrame(self.centralwidget)
         self.line.setGeometry(QtCore.QRect(40, 460, 661, 21))
         self.line.setFrameShape(QtWidgets.QFrame.HLine)
         self.line.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line.setObjectName("line")
 
-        '''contrast Slider'''
         self.contrastSlider = QtWidgets.QSlider(self.centralwidget)
         self.contrastSlider.setGeometry(QtCore.QRect(750, 70, 160, 22))
         self.contrastSlider.setOrientation(QtCore.Qt.Horizontal)
@@ -52,7 +81,6 @@ class Ui_MainWindow(object):
         self.label.setGeometry(QtCore.QRect(770, 50, 141, 16))
         self.label.setObjectName("label")
 
-        '''Imagine'''
         self.Imagine = QtWidgets.QLabel(self.centralwidget)
         self.Imagine.setGeometry(QtCore.QRect(20, 10, 681, 441))
         self.Imagine.setObjectName("Imagine")
@@ -62,7 +90,6 @@ class Ui_MainWindow(object):
         self.menubar.setGeometry(QtCore.QRect(0, 0, 1041, 26))
         self.menubar.setObjectName("menubar")
 
-        '''Meniu'''
         self.menuFile = QtWidgets.QMenu(self.menubar)
         self.menuFile.setObjectName("menuFile")
         MainWindow.setMenuBar(self.menubar)
@@ -71,75 +98,50 @@ class Ui_MainWindow(object):
         self.statusbar.setObjectName("statusbar")
         MainWindow.setStatusBar(self.statusbar)
 
-        '''Buton'''
         self.DetectButton = QPushButton(self.centralwidget)
-        self.DetectButton.setObjectName(u"DetectButton")
+        self.DetectButton.setObjectName("DetectButton")
         self.DetectButton.setGeometry(QtCore.QRect(810, 520, 111, 31))
 
-        '''Gamma slider'''
         self.GammaSlider = QSlider(self.centralwidget)
-        self.GammaSlider.setObjectName(u"GammaSlider")
+        self.GammaSlider.setObjectName("GammaSlider")
         self.GammaSlider.setGeometry(QRect(750, 160, 160, 22))
         self.GammaSlider.setOrientation(Qt.Horizontal)
         self.GammaSlider.setMinimum(1)
         self.GammaSlider.setMaximum(10)
 
-        '''Gamma label'''
         self.GammaLabel = QLabel(self.centralwidget)
-        self.GammaLabel.setObjectName(u"GammaLabel")
+        self.GammaLabel.setObjectName("GammaLabel")
         self.GammaLabel.setGeometry(QRect(810, 140, 55, 16))
 
-        '''Noise Reduction Slider'''
         self.noiseReductionSlider = QSlider(self.centralwidget)
-        self.noiseReductionSlider.setObjectName(u"noiseReductionSlider")
+        self.noiseReductionSlider.setObjectName("noiseReductionSlider")
         self.noiseReductionSlider.setGeometry(QRect(750, 240, 160, 22))
         self.noiseReductionSlider.setOrientation(Qt.Horizontal)
         self.noiseReductionSlider.setMinimum(1)
         self.noiseReductionSlider.setMaximum(10)
         self.noiseReductionSlider.setValue(1)
 
-        '''Noise Reduction Label'''
         self.noiseReductionLabel = QLabel(self.centralwidget)
-        self.noiseReductionLabel.setObjectName(u"noiseReductionLabel")
+        self.noiseReductionLabel.setObjectName("noiseReductionLabel")
         self.noiseReductionLabel.setGeometry(QRect(810, 220, 100, 16))
 
         self.batchButton = QPushButton(self.centralwidget)
-        self.batchButton.setObjectName(u"batchButton")
+        self.batchButton.setObjectName("batchButton")
         self.batchButton.setGeometry(QRect(810, 570, 111, 31))
 
-        self.contrastSlider.raise_()
-        self.label.raise_()
-        self.line.raise_()
-        self.Imagine.raise_()
-        self.DetectButton.raise_()
-        self.GammaSlider.raise_()
-        self.GammaLabel.raise_()
-        self.noiseReductionSlider.raise_()
-        self.noiseReductionLabel.raise_()
-        self.batchButton.raise_()
-
-        # Slider pentru ajustarea pragului de detectare
         self.thresholdSlider = QSlider(self.centralwidget)
         self.thresholdSlider.setGeometry(QtCore.QRect(750, 450, 160, 22))
         self.thresholdSlider.setOrientation(Qt.Horizontal)
         self.thresholdSlider.setMinimum(10)
         self.thresholdSlider.setMaximum(100)
-        self.thresholdSlider.setValue(50)
+        self.thresholdSlider.setValue(40)
         self.thresholdSlider.setObjectName("thresholdSlider")
 
         self.thresholdLabel = QLabel(self.centralwidget)
         self.thresholdLabel.setGeometry(QtCore.QRect(750, 420, 160, 22))
         self.thresholdLabel.setText("Pragul de detectare")
 
-
-
         MainWindow.setCentralWidget(self.centralwidget)
-
-        # Conectarea butoanelor și slider-ului
-        self.DetectButton.clicked.connect(self.detectObjects)
-
-
-        '''Aici se creeaza actiunile'''
 
         self.actionNou = QtWidgets.QAction(MainWindow)
         self.actionNou.setObjectName("actionNou")
@@ -147,45 +149,56 @@ class Ui_MainWindow(object):
         self.action_sterge = QtWidgets.QAction(MainWindow)
         self.action_sterge.setObjectName("action_sterge")
 
+        self.actionSecv = QtWidgets.QAction(MainWindow)
+        self.actionSecv.setObjectName("actionSecv")
+
         self.actionContrast = QtWidgets.QAction(MainWindow)
         self.actionContrast.setObjectName("actionContrast")
 
         self.menuFile.addAction(self.actionNou)
         self.menuFile.addAction(self.action_sterge)
+        self.menuFile.addAction(self.actionSecv)
+
         self.menubar.addAction(self.menuFile.menuAction())
         self.contrastSlider.addAction(self.actionContrast)
         self.noiseReductionSlider.valueChanged.connect(self.applyNoiseReduction)
-
+        self.DetectButton.clicked.connect(self.detectObjects)
 
         self.retranslateUi(MainWindow)
 
-        #Aici se conecteaza actiunile la sloturi
-        self.actionNou.triggered.connect(self.loadImage)  # Conectează la metoda loadImage
+        self.actionNou.triggered.connect(self.loadImage)
         self.action_sterge.triggered.connect(self.deletePhoto)
+        self.actionSecv.triggered.connect(self.handle_frame_sequence)
         self.DetectButton.clicked.connect(self.detectObjects)
         self.batchButton.clicked.connect(self.batchProcessing)
         self.contrastSlider.valueChanged['int'].connect(self.setContrast)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
 
-    '''Sfarsit setupUi'''
-
     def defaultValues(self):
         self.contrastSlider.setValue(100)
         self.noiseReductionSlider.setValue(1)
+
     def loadImage(self):
+        self.stop_video()
 
-        self.filename = QFileDialog.getOpenFileName(directory="G:/__PI Proiect/pythonProject1/res/images",filter="Image (*.png *.jpg *.jpeg *.bmp)")[0]
+        self.filename = QFileDialog.getOpenFileName(
+            directory="G:/__PI Proiect/pythonProject1/res/images",
+            filter="Media Files (*.png *.jpg *.jpeg *.bmp *.mp4)"
+        )[0]
+
         self.defaultValues()
-        if self.filename:
-            self.image = cv.imread(self.filename)
-            if self.image is None:
-                QMessageBox.warning(self.main_window, "Eroare",
-                                    "Imaginea nu a putut fi încărcată. Verifică dacă fișierul este valid.")
-                return
 
-            self.tmp = self.image.copy()
-            self.setPhoto(self.image)
-        '''Sfarsit loadImage'''
+        if self.filename:
+            if self.filename.endswith('.mp4'):
+                self.handle_video()
+            else:
+                self.handle_image()
+
+    def loadSequence(self):
+        self.frames_dir = QFileDialog.getExistingDirectory(directory="G:/__PI Proiect/pythonProject1/res/")
+        if self.frames_dir:
+            self.play_frame_sequence()
+
     def displayImage(self, img):
         """Afișează imaginea în QLabel după redimensionare."""
         img = cv.resize(img, (681, 441))
@@ -200,45 +213,33 @@ class Ui_MainWindow(object):
             return
 
         try:
-            # Încarcă modelul YOLOv8
-            model_path = "res/best.pt"  # Calea către model
+            model_path = "res/best.pt"
             model = YOLO(model_path)
 
-            # Încarcă configurația din config.json
             config_path = "res/config.json"
             with open(config_path, 'r') as f:
                 config = json.load(f)
 
-            # Aplicați pragul de detectare din slider
             detection_threshold = self.thresholdSlider.value() / 100.0
 
-            # Realizează inferența pe imaginea curentă
             results = model.predict(self.tmp, conf=detection_threshold)
+            class_labels = model.names
 
-            # Obține etichetele claselor din model
-            class_labels = model.names  # Dicționar: {id_clasă: nume_clasă}
-
-            # Extrage informațiile despre detecții
-            annotated_frame = results[0].plot()  # Imagine cu detecțiile marcate
+            annotated_frame = results[0].plot()
             self.displayImage(annotated_frame)
-
 
             detected_objects = []
             for r in results[0].boxes:
-                class_id = int(r.cls[0])  # ID-ul clasei
-                confidence = float(r.conf[0])  # Încrederea
+                class_id = int(r.cls[0])
+                confidence = float(r.conf[0])
                 bbox = r.xywh[0].tolist()
                 detected_objects.append((class_id, bbox, confidence))
 
             return detected_objects
-            # Afișează detecțiile
-            # detecții = "\n".join([f"{obj[0]}: {obj[1]:.2f}" for obj in detected_objects])
-            # QMessageBox.information(self.main_window, "Detecții finalizate", f"Obiectele detectate:\n{detecții}")
 
         except Exception as e:
             QMessageBox.critical(self.main_window, "Eroare", f"A apărut o eroare în timpul detecției: {str(e)}")
             return []
-
 
     def setPhoto(self, image):
         image = cv.resize(image, [681, 441], interpolation=cv.INTER_AREA)
@@ -257,7 +258,6 @@ class Ui_MainWindow(object):
 
         detections = []
         for image_file in image_files:
-
             self.tmp = cv.imread(os.path.join(source_dir, image_file))
             detections = self.detectObjects()
 
@@ -275,18 +275,18 @@ class Ui_MainWindow(object):
                         txt_file.write(f"{class_id} {bbox[0]:.6f} {bbox[1]:.6f} {bbox[2]:.6f} {bbox[3]:.6f} {confidence:.6f}\n")
 
         print(f"Procesarea imaginilor din {source_dir} s-a încheiat. Rezultatele sunt în {output_dir}.")
+
     def deletePhoto(self):
         self.Imagine.setText("Încarcă o imagine pentru a începe.")
-
+        self.tmp = None
+        self.image = None
 
     def setContrast(self):
         if self.tmp is None:
             return
 
         value = self.contrastSlider.value() / 100.0
-
         newImage = cv.convertScaleAbs(self.tmp, alpha=value, beta=0)
-
         self.setPhoto(newImage)
 
     def applyNoiseReduction(self):
@@ -296,6 +296,71 @@ class Ui_MainWindow(object):
         noiseReducedImage = cv.bilateralFilter(self.tmp, d=9, sigmaColor=intensity, sigmaSpace=intensity)
         self.setPhoto(noiseReducedImage)
 
+    def handle_video(self):
+        self.video_capture = cv.VideoCapture(self.filename)
+
+        if not self.video_capture.isOpened():
+            QMessageBox.warning(self.main_window, "Eroare",
+                                "Video-ul nu a putut fi încărcat. Verifică dacă fișierul este valid.")
+            return
+
+        ret, frame = self.video_capture.read()
+        if ret:
+            self.tmp = frame.copy()
+            self.image = frame.copy()
+            self.displayImage(frame)
+
+            self.is_playing_video = True
+            self.timer.start(33)
+        else:
+            QMessageBox.warning(self.main_window, "Eroare",
+                                "Nu s-a putut citi frame-ul video. Verifică dacă fișierul este valid.")
+
+    def handle_image(self):
+        self.image = cv.imread(self.filename)
+
+        if self.image is None:
+            QMessageBox.warning(self.main_window, "Eroare",
+                                "Imaginea nu a putut fi încărcată. Verifică dacă fișierul este valid.")
+            return
+
+        self.tmp = self.image.copy()
+        self.displayImage(self.image)
+
+    def handle_frame_sequence(self):
+        frames_dir = QFileDialog.getExistingDirectory(self.main_window, "Select Frames Directory")
+        if frames_dir:
+            if self.video_thread:
+                self.video_thread.stop()
+
+            self.video_thread = FrameSequenceThread(frames_dir)
+            self.video_thread.frame_ready.connect(self.update_frame)
+            self.video_thread.start()
+
+    def update_video_frame(self):
+        if self.video_capture is None or not self.is_playing_video:
+            return
+
+        ret, frame = self.video_capture.read()
+        if ret:
+            processed_frame = self.apply_current_effects(frame)
+            self.displayImage(processed_frame)
+        else:
+            self.video_capture.set(cv.CAP_PROP_POS_FRAMES, 0)
+
+    def apply_current_effects(self, frame):
+        processed = frame.copy()
+
+        if self.contrastSlider.value() != 100:
+            contrast = self.contrastSlider.value() / 100.0
+            processed = cv.convertScaleAbs(processed, alpha=contrast, beta=0)
+
+        if self.noiseReductionSlider.value() > 1:
+            intensity = self.noiseReductionSlider.value() * 5
+            processed = cv.bilateralFilter(processed, d=9, sigmaColor=intensity, sigmaSpace=intensity)
+
+        return processed
+
     def retranslateUi(self, MainWindow):
         _translate = QtCore.QCoreApplication.translate
         MainWindow.setWindowTitle(_translate("MainWindow", "DeepFrame"))
@@ -304,10 +369,44 @@ class Ui_MainWindow(object):
         self.menuFile.setTitle(_translate("MainWindow", "Fișier"))
         self.actionNou.setText(_translate("MainWindow", "Nou"))
         self.action_sterge.setText(_translate("MainWindow", "Șterge fișierul"))
-        self.DetectButton.setText(QCoreApplication.translate("MainWindow", u"Detecție obiecte", None))
-        self.GammaLabel.setText(QCoreApplication.translate("MainWindow", u"Gamma", None))
+        self.DetectButton.setText(QCoreApplication.translate("MainWindow", "Detecție obiecte", None))
+        self.GammaLabel.setText(QCoreApplication.translate("MainWindow", "Gamma", None))
         self.noiseReductionLabel.setText(_translate("MainWindow", "Reducere zgomot"))
-        self.batchButton.setText(QCoreApplication.translate("MainWindow", u"Procesare batch", None))
+        self.batchButton.setText(QCoreApplication.translate("MainWindow", "Procesare batch", None))
+        self.actionSecv.setText(_translate("MainWindow", "Secventa de frame-uri"))
+
+    def stop_video(self):
+        self.timer.stop()
+        self.is_playing_video = False
+        if self.video_capture is not None:
+            self.video_capture.release()
+            self.video_capture = None
+
+    def play_frame_sequence(self):
+        if hasattr(self, 'frame_thread'):
+            self.frame_thread.stop()
+
+        self.frame_thread = FrameSequenceThread(self.frames_dir)
+        self.frame_thread.frame_ready.connect(self.update_frame)
+        self.frame_thread.start()
+
+    def update_frame(self, frame):
+        self.tmp = frame.copy()
+        self.displayImage(frame)
+
+    def cleanup_media(self):
+        if hasattr(self, 'frame_thread'):
+            self.frame_thread.stop()
+            self.frame_thread = None
+
+    def deletePhoto(self):
+        self.stop_video()
+        self.Imagine.setText("Încarcă o imagine pentru a începe.")
+        self.tmp = None
+        self.image = None
+
+    def cleanup(self):
+        self.stop_video()
 
 
 # if __name__ == "__main__":
