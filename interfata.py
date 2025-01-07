@@ -34,12 +34,12 @@ class FrameSequenceThread(QThread):
                 print(f"Eroare la încărcarea frame-ului: {frame_file}")
                 continue
 
-            # Aplicăm detecția doar dacă este activată
+            # Aplicăm detectia doar daca este activata
             if self.detect_objects:
                 results = self.model.predict(frame, conf=self.threshold / 100.0)
-                self.frame_ready.emit(frame, results)  # Emitem frame-ul și detecțiile
+                self.frame_ready.emit(frame, results)  # Emitem frame-ul si detectiile
             else:
-                self.frame_ready.emit(frame, [])  # Dacă nu, doar frame-ul
+                self.frame_ready.emit(frame, [])  # Daca nu, doar frame-ul
 
             QtCore.QThread.msleep(33)  # ~30 FPS
 
@@ -153,7 +153,7 @@ class Ui_MainWindow(object):
         self.menubar.addAction(self.menuFile.menuAction())
 
         # Aici se conecteaza actiunile la sloturi
-        self.actionNou.triggered.connect(self.loadImage)  # Conectează la metoda loadImage
+        self.actionNou.triggered.connect(self.loadImage)  # Conecteaza la metoda loadImage
         self.actionSterge.triggered.connect(self.deletePhoto)
         self.DetectButton.clicked.connect(self.start_detection)
         self.actionSecven_video.triggered.connect(self.action_load_sequence)
@@ -203,12 +203,12 @@ class Ui_MainWindow(object):
     def update_threshold(self):
         detection_threshold = self.horizontalSlider.value()
 
-        # Dacă există o imagine, relansăm detecția
+        # Daca exista o imagine, relansam detectia
         if hasattr(self, 'image') and self.image is not None:
             results = self.model.predict(self.image, conf=detection_threshold / 100.0)
             self.process_frame(self.image, results)
 
-        # Dacă secvența video rulează, actualizăm pragul pentru viitoarele frame-uri
+        # Daca secventa video ruleaza, actualizam pragul pentru viitoarele frame-uri
         if self.video_thread:
             self.video_thread.threshold = detection_threshold
 
@@ -230,12 +230,12 @@ class Ui_MainWindow(object):
     def start_detection(self):
         detection_threshold = self.horizontalSlider.value()
 
-        # Dacă avem o secvență video, actualizăm pragul și activăm detecția
+        # Daca avem o secventa video, actualizam pragul si activam detectia
         if self.video_thread and self.video_thread.running:
             self.video_thread.detect_objects = True
             self.video_thread.threshold = detection_threshold
 
-        # Dacă avem o imagine statică, efectuăm detecția imediat
+        # Daca avem o imagine statica, efectuam detectia imediat
         elif hasattr(self, 'image') and self.image is not None:
             results = self.model.predict(self.image, conf=detection_threshold / 100.0)
             self.process_frame(self.image, results)
@@ -244,21 +244,21 @@ class Ui_MainWindow(object):
                                 "Încarcă o imagine sau pornește secvența video înainte de detectare.")
 
     def process_frame(self, frame, results):
-        # Actualizăm frame-ul curent și rezultatele
+        # Actualizam frame-ul curent si rezultatele
         self.current_frame = frame.copy()
         self.current_results = results if results else []
 
-        # Apelăm afișarea pentru a curăța și desena detecțiile
+        # Apelam afisarea pentru a curata si desena detectiile
         self.update_display()
 
     def update_display(self):
         if self.current_frame is None:
             return
 
-        # Lucrăm cu o copie curată a frame-ului
+        # Lucram cu o copie curata a frame-ului
         display_frame = self.current_frame.copy()
 
-        # Dacă avem rezultate de detecție, le procesăm
+        # Daca avem rezultate de detectie, le procesam
         if self.current_results:
             selected_classes = [self.class_map[cb] for cb in self.checkboxes if cb.isChecked()]
 
@@ -270,13 +270,13 @@ class Ui_MainWindow(object):
                         x1, y1, x2, y2 = box.xyxy[0].cpu().numpy()
                         conf = float(box.conf[0])
 
-                        # Desenăm doar obiectele selectate
+                        # Desenam doar obiectele selectate
                         cv.rectangle(display_frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
                         label = f'{cls} {conf:.2f}'
                         cv.putText(display_frame, label, (int(x1), int(y1) - 10),
                                    cv.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
-        # Afișăm frame-ul actualizat
+        # Afisam frame-ul actualizat
         display_frame = cv.resize(display_frame, (681, 441))
         rgb_image = cv.cvtColor(display_frame, cv.COLOR_BGR2RGB)
         qt_image = QImage(rgb_image.data, rgb_image.shape[1], rgb_image.shape[0],
